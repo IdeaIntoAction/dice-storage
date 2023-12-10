@@ -1,9 +1,11 @@
 import http from 'http';
+import { ConsumeMessage } from 'amqplib';
 import app from '../app/app';
 import { config } from '../config';
 import { RabbitService } from '../service/rabbit/rabbit';
 import { logger } from '../util/logger';
 import { IDiceRequest } from '../service/rabbit/interface';
+import { knex } from '../db';
 
 const { port } = config.server;
 app.set('port', port);
@@ -38,9 +40,33 @@ async function onListening() {
     'postgres_exchange',
   );
 
-  rabbit.setCustomMessageHandler(async (message: IDiceRequest) => {
-    logger.info(message, 'Received message');
-    return true;
+  rabbit.setCustomMessageHandler(async (message: ConsumeMessage | null) => {
+    if (!message) return false;
+
+    const content = JSON.parse(message.content.toString()) as IDiceRequest;
+
+    logger.info(content, 'Received content');
+
+    const gameRecord = {
+      id: content.id,
+      win_status: content.status,
+      player_id: content.userId,
+      number: content.number,
+    };
+
+    try {
+      await knex('games').insert(gameRecord);
+
+      rabbit.ack(message);
+      if (content.status === true) rabbit.confirmWritingToDB(message);
+
+      return true;
+    } catch (err) {
+      logger.error(err);
+      // TODO: handle error
+      rabbit.ack(message);
+      return false;
+    }
   });
 
   rabbit.init();

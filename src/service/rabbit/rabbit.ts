@@ -1,6 +1,6 @@
 import { ConsumeMessage } from 'amqplib';
 import { RabbitConnect } from './connect';
-import { MessageHandlerCallback, IDiceRequest } from './interface';
+import { MessageHandlerCallback } from './interface';
 import { logger } from '../../util/logger';
 
 export class RabbitService {
@@ -34,11 +34,8 @@ export class RabbitService {
 
       channel.consume(queue, async (msg: ConsumeMessage | null) => {
         try {
-          const content = JSON.parse(msg?.content.toString() || '') as IDiceRequest;
-          logger.info(`${this.LOG_ALIAS} Received message: ${content?.id}`);
-
           if (this.customMessageHandler) {
-            this.customMessageHandler(content);
+            this.customMessageHandler(msg);
           } else {
             logger.error(`${this.LOG_ALIAS} Message handler is not defined`);
           }
@@ -56,9 +53,9 @@ export class RabbitService {
     this.connection.ack(msg);
   }
 
-  confirmWritingToDB(msg: ConsumeMessage, receipt: any): void {
+  confirmWritingToDB(msg: ConsumeMessage): void {
     try {
-      this.connection.channel.sendToQueue(msg?.properties.replyTo, Buffer.from(JSON.stringify(receipt)), {
+      this.connection.channel.sendToQueue(msg?.properties.replyTo, Buffer.from(JSON.stringify({ status: true })), {
         correlationId: msg?.properties.correlationId,
       });
     } catch (error) {
